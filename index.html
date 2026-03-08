@@ -371,6 +371,48 @@
   }
   .footer span { font-size: 11px; color: var(--text3); font-weight: 400; }
 
+  /* API Key input */
+  #api-key-wrap {
+    margin-bottom: 24px;
+    padding: 16px 20px;
+    background: rgba(26,36,55,0.7);
+    border: 1px solid var(--border2);
+    border-radius: 12px;
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  }
+  #api-key-wrap label { font-size: 12px; font-weight: 600; color: var(--text2); white-space: nowrap; }
+  #api-key-input {
+    flex: 1; min-width: 260px;
+    background: rgba(0,0,0,0.3);
+    border: 1px solid var(--border2);
+    border-radius: 7px;
+    padding: 9px 14px;
+    font-family: 'Inter', monospace;
+    font-size: 12px;
+    color: var(--white);
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  #api-key-input:focus { border-color: var(--cyan); }
+  #api-key-input::placeholder { color: var(--text3); }
+  #api-key-save {
+    padding: 9px 18px;
+    border-radius: 7px;
+    border: none;
+    background: linear-gradient(135deg, var(--blue), var(--cyan));
+    color: #fff;
+    font-family: 'Inter', sans-serif;
+    font-size: 12px; font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.15s;
+  }
+  #api-key-save:hover { opacity: 0.85; }
+  #api-key-status { font-size: 11px; color: var(--green); display: none; }
+  #api-key-status.visible { display: inline; }
+  #api-key-link { font-size: 11px; color: var(--text3); }
+  #api-key-link a { color: var(--cyan); text-decoration: none; }
+  #api-key-link a:hover { text-decoration: underline; }
+
   /* Export button */
   #export-wrap { margin-top: 16px; display: none; }
   #export-wrap.visible { display: block; }
@@ -424,6 +466,15 @@
       <span class="issue-tag" id="issue-num"></span>
       <span class="date-tag"  id="today-date"></span>
     </div>
+  </div>
+
+  <!-- API Key Input -->
+  <div id="api-key-wrap">
+    <label>🔑 Anthropic API Key</label>
+    <input id="api-key-input" type="password" placeholder="sk-ant-..." autocomplete="off"/>
+    <button id="api-key-save">Save</button>
+    <span id="api-key-status">✓ Key saved</span>
+    <span id="api-key-link"><a href="https://console.anthropic.com/settings/keys" target="_blank">Get your key →</a></span>
   </div>
 
   <!-- Hero -->
@@ -860,9 +911,16 @@ async function apiRequest(messages, useSearch = true) {
     messages,
   };
   if (useSearch) body.tools = [{ type: 'web_search_20250305', name: 'web_search' }];
+  const apiKey = window._dbApiKey || '';
+  if (!apiKey) { alert('Please enter your Anthropic API key first.'); throw new Error('No API key'); }
   return fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-beta': 'interleaved-thinking-2025-05-14',
+    },
     body: JSON.stringify(body),
   });
 }
@@ -978,6 +1036,22 @@ async function generate() {
   document.getElementById('done-banner').classList.add('visible');
   document.getElementById('export-wrap').classList.add('visible');
 }
+
+// API key handling
+window._dbApiKey = localStorage.getItem('db_api_key') || '';
+if (window._dbApiKey) {
+  document.getElementById('api-key-input').value = '••••••••••••••••';
+  document.getElementById('api-key-status').classList.add('visible');
+}
+document.getElementById('api-key-save').addEventListener('click', () => {
+  const val = document.getElementById('api-key-input').value.trim();
+  if (val && val !== '••••••••••••••••') {
+    window._dbApiKey = val;
+    localStorage.setItem('db_api_key', val);
+    document.getElementById('api-key-input').value = '••••••••••••••••';
+    document.getElementById('api-key-status').classList.add('visible');
+  }
+});
 
 document.getElementById('gen-btn').addEventListener('click', generate);
 document.getElementById('refresh-btn').addEventListener('click', generate);
