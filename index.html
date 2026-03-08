@@ -1017,10 +1017,19 @@ async function generate() {
     updateProgress();
   }
 
-  // Run fully sequentially with a small gap — avoids all concurrency and 5-hour rate limits
-  for (const s of SECTIONS) {
+  // Run fully sequentially — 65s gap lets Tier 1 TPM window fully reset
+  for (let i = 0; i < SECTIONS.length; i++) {
+    const s = SECTIONS[i];
     await runSection(s);
-    await sleep(30000); // 30s pause — lets Tier 1 TPM window reset between sections
+    if (i < SECTIONS.length - 1) {
+      // Countdown between sections so user knows it's working
+      const btn = document.getElementById('btn-text');
+      for (let t = 65; t > 0; t--) {
+        btn.textContent = `Next section in ${t}s… (${i+1}/${SECTIONS.length} done)`;
+        await sleep(1000);
+      }
+      btn.textContent = 'Generating…';
+    }
   }
 
   generating = false;
