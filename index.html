@@ -560,15 +560,15 @@ document.getElementById('today-date').textContent = TODAY;
 document.getElementById('footer-date').textContent = `DualBird Market Intelligence · AI-Powered · ${TODAY}`;
 
 const SECTIONS = [
-  {id:'tldr',            icon:'⚡', label:'TL;DR',            desc:'Top 5 signal developments this week'},
-  {id:'publications',    icon:'📰', label:'Publications',     desc:'Technical articles, blogs & case studies'},
-  {id:'market_leaders',  icon:'🏢', label:'Market Leaders',   desc:'AWS, Databricks, Snowflake & major players'},
-  {id:'whales',          icon:'🐳', label:'Whale Accounts',   desc:'Named enterprise targets showing signals'},
-  {id:'competition',     icon:'⚔️', label:'Competition',      desc:'Direct competitors & emerging threats'},
-  {id:'customer_signals',icon:'📡', label:'Customer Signals', desc:'ICP buying intent and pain signals'},
-  {id:'manda',           icon:'💰', label:'M&A & Funding',    desc:'Ecosystem deals, rounds & consolidation'},
-  {id:'trends',          icon:'📈', label:'Trends',           desc:'Macro direction of travel'},
-  {id:'blind_spots',     icon:'🔍', label:'Blind Spots',      desc:'What might we be missing?'},
+  {id:'tldr',            icon:'⚡', label:'TL;DR',            desc:'Top 5 signal developments this week',     search:true},
+  {id:'publications',    icon:'📰', label:'Publications',     desc:'Technical articles, blogs & case studies', search:true},
+  {id:'market_leaders',  icon:'🏢', label:'Market Leaders',   desc:'AWS, Databricks, Snowflake & major players', search:true},
+  {id:'whales',          icon:'🐳', label:'Whale Accounts',   desc:'Named enterprise targets showing signals', search:true},
+  {id:'competition',     icon:'⚔️', label:'Competition',      desc:'Direct competitors & emerging threats',   search:true},
+  {id:'customer_signals',icon:'📡', label:'Customer Signals', desc:'ICP buying intent and pain signals',      search:false},
+  {id:'manda',           icon:'💰', label:'M&A & Funding',    desc:'Ecosystem deals, rounds & consolidation', search:true},
+  {id:'trends',          icon:'📈', label:'Trends',           desc:'Macro direction of travel',               search:false},
+  {id:'blind_spots',     icon:'🔍', label:'Blind Spots',      desc:'What might we be missing?',              search:false},
 ];
 
 const DB_CONTEXT = `DualBird is an FPGA-based infrastructure acceleration company that speeds up Apache Spark and Apache Iceberg workloads on AWS by 10-30x while reducing cloud costs by 50-90%, with zero integration or migration required. Backed by Bessemer, Lightspeed, and ICON. Targets enterprises running large-scale Spark/Iceberg on AWS in finance, media, and tech.`;
@@ -907,7 +907,7 @@ function extractJSON(text) {
 async function apiRequest(messages, useSearch = true) {
   const body = {
     model: 'claude-sonnet-4-6',
-    max_tokens: 1500,
+    max_tokens: 1024,
     messages,
   };
   if (useSearch) body.tools = [{ type: 'web_search_20250305', name: 'web_search' }];
@@ -932,7 +932,7 @@ function getText(data) {
     .join('\n');
 }
 
-async function fetchSection(id, attempt = 0) {
+async function fetchSection(id, attempt = 0, useSearch = true) {
   // On retry (attempt > 0), use a two-turn conversation:
   // first turn = original prompt, second turn = strict JSON-only demand
   let messages;
@@ -947,13 +947,13 @@ async function fetchSection(id, attempt = 0) {
     ];
   }
 
-  const res = await apiRequest(messages, attempt === 0);
+  const res = await apiRequest(messages, attempt === 0 && useSearch);
 
   if (res.status === 429 && attempt < 3) {
     const wait = (attempt + 1) * 30000;
     console.warn(`[${id}] 429 rate limit, retrying in ${wait/1000}s (attempt ${attempt+1}/3)`);
     await sleep(wait);
-    return fetchSection(id, attempt + 1);
+    return fetchSection(id, attempt + 1, useSearch);
   }
 
   if (!res.ok) {
@@ -974,7 +974,7 @@ async function fetchSection(id, attempt = 0) {
   if (attempt < 2) {
     console.warn(`[${id}] No JSON found, retrying with stricter follow-up (attempt ${attempt + 1})`);
     await sleep(2000);
-    return fetchSection(id, attempt + 1);
+    return fetchSection(id, attempt + 1, useSearch);
   }
 
   throw new Error(`No JSON array after ${attempt + 1} attempts. Preview: ${allText.slice(0, 200)}`);
@@ -1003,7 +1003,7 @@ async function generate() {
     setCardStatus(s.id, 'loading');
     updateProgress();
     try {
-      const result = await fetchSection(s.id);
+      const result = await fetchSection(s.id, 0, s.search !== false);
       sectionData[s.id] = result;
       statuses[s.id] = 'done';
       setCardStatus(s.id, 'done');
@@ -1020,7 +1020,7 @@ async function generate() {
   // Run fully sequentially with a small gap — avoids all concurrency and 5-hour rate limits
   for (const s of SECTIONS) {
     await runSection(s);
-    await sleep(1500); // 1.5s pause between requests
+    await sleep(15000); // 15s pause — stays within Tier 1 TPM limits
   }
 
   generating = false;
