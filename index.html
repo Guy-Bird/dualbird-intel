@@ -309,7 +309,7 @@
     font-size: 13px; color: var(--green); font-weight: 700;
     letter-spacing: -0.2px;
   }
-  .src-wrap { margin-top: 10px; }
+  .src-wrap { margin-top: 10px; position: relative; z-index: 10; }
 
   a.src-link {
     display: inline-flex; align-items: center; gap: 5px;
@@ -320,6 +320,8 @@
     text-decoration: none;
     max-width: 380px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     transition: background 0.15s, border-color 0.15s;
+    cursor: pointer;
+    position: relative; z-index: 10;
   }
   a.src-link:hover { background: rgba(0,209,255,0.12); border-color: rgba(0,209,255,0.3); }
   span.src-plain { font-size: 11px; color: var(--text2); font-weight: 400; }
@@ -603,6 +605,11 @@ Do NOT say "I need to search" or narrate your process — just output the JSON a
 Do NOT use markdown code fences or backticks.
 All string values: plain text only. No <cite> tags, no HTML, no XML inside values.
 
+RECENCY RULES — CRITICAL:
+- Every item you return MUST be from the last 14 days. Today is ${TODAY}.
+- Do NOT include anything older than 14 days — if you cannot find enough recent items, return fewer items rather than using older content.
+- Each item must include the exact publication date. If the date is unclear, skip that item.
+
 URL RULES — CRITICAL:
 - The "url" field must be the EXACT direct link to the specific article, blog post, press release, or job posting you are citing.
 - NEVER use a homepage URL like https://databricks.com or https://aws.amazon.com — these are NOT acceptable.
@@ -625,56 +632,56 @@ ${JSON_RULES}
 
   publications: `You are a B2B market intelligence analyst. ${DB_CONTEXT} Today is ${TODAY}.
 
-Based on your knowledge, identify 4 recent technical articles or engineering blogs (last 4 weeks) about: Apache Spark, Apache Iceberg, AWS EMR, data lakehouse, Databricks, Snowflake, ETL acceleration, or cloud data infrastructure optimization.
+Based on your knowledge, identify 4 technical articles or engineering blogs published in the LAST 14 DAYS about: Apache Spark, Apache Iceberg, AWS EMR, data lakehouse, Databricks, Snowflake, ETL acceleration, or cloud data infrastructure optimization.
 
 ${JSON_RULES}
-[{"title":"article title","src":"publication","url":"exact article URL or empty string","verified":true,"date":"Mon YYYY","summary":"2 sentences — plain text only","relevance":"1-2 sentence DualBird angle — plain text only"}]`,
+[{"title":"article title","src":"publication","url":"exact article URL or empty string","verified":true,"date":"exact date e.g. Mar 9 2026 — must be within last 14 days","summary":"2 sentences — plain text only","relevance":"1-2 sentence DualBird angle — plain text only"}]`,
 
   market_leaders: `You are a B2B market intelligence analyst. ${DB_CONTEXT} Today is ${TODAY}.
 
-Based on your knowledge, identify latest news (last 4 weeks) from: AWS EMR/Glue/Athena, Databricks, Snowflake, Google BigQuery, Azure Synapse.
+Based on your knowledge, identify news published in the LAST 14 DAYS from: AWS EMR/Glue/Athena, Databricks, Snowflake, Google BigQuery, Azure Synapse.
 
 ${JSON_RULES}
-[{"company":"name","cat":"Infra or Platform or AI or Other","news":"2-3 sentence summary — plain text only","date":"Mon YYYY","src":"publication","url":"exact article URL or empty string","verified":true,"impact":"1-2 sentence DualBird implication — plain text only"}]`,
+[{"company":"name","cat":"Infra or Platform or AI or Other","news":"2-3 sentence summary — plain text only","date":"exact date e.g. Mar 9 2026 — must be within last 14 days","src":"publication","url":"exact article URL or empty string","verified":true,"impact":"1-2 sentence DualBird implication — plain text only"}]`,
 
   whales: `You are a B2B market intelligence analyst. ${DB_CONTEXT} Today is ${TODAY}.
 
-Based on your knowledge, find recent (last 6 weeks) engineering blog posts, hiring signals, or public announcements from enterprise targets revealing Spark/Iceberg/data infra investment: Netflix, Pinterest, Uber, Lyft, Airbnb, LinkedIn, Stripe, JPMorgan Chase, Goldman Sachs, Capital One, Slack, Coinbase.
+Based on your knowledge, find engineering blog posts, hiring signals, or public announcements from the LAST 14 DAYS from enterprise targets revealing Spark/Iceberg/data infra investment: Netflix, Pinterest, Uber, Lyft, Airbnb, LinkedIn, Stripe, JPMorgan Chase, Goldman Sachs, Capital One, Slack, Coinbase.
 
 ${JSON_RULES}
-[{"company":"name","type":"Blog or Hiring or PR or Announcement","desc":"2-3 sentence signal — plain text only","date":"Mon YYYY","src":"publication","url":"exact article URL or empty string","verified":true,"priority":"High or Medium or Low"}]`,
+[{"company":"name","type":"Blog or Hiring or PR or Announcement","desc":"2-3 sentence signal — plain text only","date":"exact date e.g. Mar 9 2026 — must be within last 14 days","src":"publication","url":"exact article URL or empty string","verified":true,"priority":"High or Medium or Low"}]`,
 
   competition: `You are a B2B market intelligence analyst. ${DB_CONTEXT} Today is ${TODAY}.
 
-Based on your knowledge, find recent news about: Speedata (FPGA analytics), NVIDIA RAPIDS/GPU Spark acceleration, Photon engine (Databricks), hardware-accelerated analytics startups, Intel/AMD FPGA for data, Flarion, Dremio (https://www.dremio.com/), Onehouse (https://www.onehouse.ai/).
+Based on your knowledge, find news from the LAST 14 DAYS about: Speedata (FPGA analytics), NVIDIA RAPIDS/GPU Spark acceleration, Photon engine (Databricks), hardware-accelerated analytics startups, Intel/AMD FPGA for data, Flarion, Dremio (https://www.dremio.com/), Onehouse (https://www.onehouse.ai/).
 
 ${JSON_RULES}
-[{"company":"name","type":"Competitor or Emerging or Partner","news":"2-3 sentence update — plain text only","date":"Mon YYYY","src":"publication or No recent signal","url":"exact article URL or empty string","verified":true,"threat":"High or Medium or Monitor","notes":"1-2 sentence strategic note — plain text only"}]`,
+[{"company":"name","type":"Competitor or Emerging or Partner","news":"2-3 sentence update — plain text only","date":"exact date e.g. Mar 9 2026 — must be within last 14 days","src":"publication or No recent signal","url":"exact article URL or empty string","verified":true,"threat":"High or Medium or Monitor","notes":"1-2 sentence strategic note — plain text only"}]`,
 
   customer_signals: `You are a B2B market intelligence analyst. ${DB_CONTEXT} Today is ${TODAY}.
 
-Search for signals this week: Databricks/Snowflake customer announcements, enterprise cloud spend news, data engineering hiring surges, cost-cutting mandates, AI/ML pipeline investment at scale.
+Search for signals from the LAST 14 DAYS: Databricks/Snowflake customer announcements, enterprise cloud spend news, data engineering hiring surges, cost-cutting mandates, AI/ML pipeline investment at scale.
 
 ${JSON_RULES}
-[{"company":"company or segment name","signal":"2-3 sentence buying signal — plain text only","type":"Blog or Hiring or PR or Announcement","date":"Mon YYYY","src":"publication","url":"exact article URL or empty string","verified":true,"fit":"Strong or Good or Moderate"}]`,
+[{"company":"company or segment name","signal":"2-3 sentence buying signal — plain text only","type":"Blog or Hiring or PR or Announcement","date":"exact date e.g. Mar 9 2026 — must be within last 14 days","src":"publication","url":"exact article URL or empty string","verified":true,"fit":"Strong or Good or Moderate"}]`,
 
   manda: `You are a B2B market intelligence analyst. ${DB_CONTEXT} Today is ${TODAY}.
 
-Search for M&A deals, funding rounds, and strategic partnerships from the last 4 weeks in: data infrastructure, analytics, cloud data, FPGA/hardware acceleration, data lakehouse.
+Search for M&A deals, funding rounds, and strategic partnerships from the LAST 14 DAYS in: data infrastructure, analytics, cloud data, FPGA/hardware acceleration, data lakehouse.
 
 ${JSON_RULES}
-[{"company":"acquired or funded company","event":"Series A or Series B or Series C or Acquisition or Strategic Deal or CapEx Commitment","amount":"$XM or range","parties":"1-2 sentence deal description — plain text only","date":"Mon YYYY","src":"publication","url":"exact article URL or empty string","verified":true,"relevance":"1-2 sentence DualBird implication — plain text only"}]`,
+[{"company":"acquired or funded company","event":"Series A or Series B or Series C or Acquisition or Strategic Deal or CapEx Commitment","amount":"$XM or range","parties":"1-2 sentence deal description — plain text only","date":"exact date e.g. Mar 9 2026 — must be within last 14 days","src":"publication","url":"exact article URL or empty string","verified":true,"relevance":"1-2 sentence DualBird implication — plain text only"}]`,
 
   trends: `You are a B2B market intelligence analyst. ${DB_CONTEXT} Today is ${TODAY}.
 
-Based on current news, identify 4 macro trends relevant to DualBird's market: Iceberg adoption, AI/ML pipeline demands, cloud cost optimization pressure, hardware acceleration interest, open lakehouse vs proprietary platforms.
+Based on news from the LAST 14 DAYS, identify 4 macro trends relevant to DualBird's market: Iceberg adoption, AI/ML pipeline demands, cloud cost optimization pressure, hardware acceleration interest, open lakehouse vs proprietary platforms.
 
 ${JSON_RULES}
 [{"trend":"short trend name","dev":"2-3 sentence description — plain text only","traj":"Growing or Stable or Declining","src":"publication","url":"exact article URL or empty string","verified":true,"impact":"1-2 sentence DualBird impact — plain text only"}]`,
 
   blind_spots: `You are a strategic advisor. ${DB_CONTEXT} Today is ${TODAY}.
 
-Search for 3 blind spots or risks DualBird may be overlooking: alternative table formats (Hudi, Paimon, Delta Lake), GPU vs FPGA acceleration debate, regulatory changes, new open-source projects disrupting FPGA acceleration, emerging cloud providers.
+Based on developments in the LAST 14 DAYS, identify 3 blind spots or risks DualBird may be overlooking: alternative table formats (Hudi, Paimon, Delta Lake), GPU vs FPGA acceleration debate, regulatory changes, new open-source projects disrupting FPGA acceleration, emerging cloud providers.
 
 ${JSON_RULES}
 [{"gap":"short gap title","signal":"2-3 sentence risk description — plain text only","action":"1-2 sentence recommended action — plain text only","src":"publication or source","url":"exact article URL or empty string","verified":true}]`,
@@ -731,7 +738,7 @@ function srcLink(name, url, verified) {
     ? `<span class="src-unverified" title="URL may not be exact">⚠ approx</span>`
     : `<span class="src-verified" title="Direct source link">✓</span>`;
 
-  return `<a class="src-link" href="${esc(url)}" target="_blank" rel="noopener noreferrer">
+  return `<a class="src-link" href="${esc(url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">
     ${extIcon}${esc(name||url)}${badge}
   </a>`;
 }
