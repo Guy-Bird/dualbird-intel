@@ -560,7 +560,6 @@ document.getElementById('today-date').textContent = TODAY;
 document.getElementById('footer-date').textContent = `DualBird Market Intelligence · AI-Powered · ${TODAY}`;
 
 const SECTIONS = [
-  {id:'tldr',            icon:'⚡', label:'TL;DR',            desc:'Top 5 signal developments this week'},
   {id:'publications',    icon:'📰', label:'Publications',     desc:'Technical articles, blogs & case studies'},
   {id:'market_leaders',  icon:'🏢', label:'Market Leaders',   desc:'AWS, Databricks, Snowflake & major players'},
   {id:'whales',          icon:'🐳', label:'Whale Accounts',   desc:'Named enterprise targets showing signals'},
@@ -569,6 +568,7 @@ const SECTIONS = [
   {id:'manda',           icon:'💰', label:'M&A & Funding',    desc:'Ecosystem deals, rounds & consolidation'},
   {id:'trends',          icon:'📈', label:'Trends',           desc:'Macro direction of travel'},
   {id:'blind_spots',     icon:'🔍', label:'Blind Spots',      desc:'What might we be missing?'},
+  {id:'tldr',            icon:'⚡', label:'TL;DR',            desc:'Executive summary of this report'},
 ];
 
 const DB_CONTEXT = `DualBird is an FPGA-based infrastructure acceleration company that speeds up Apache Spark and Apache Iceberg workloads on AWS by 10-30x while reducing cloud costs by 50-90%, with zero integration or migration required. Backed by Bessemer, Lightspeed, and ICON. Targets enterprises running large-scale Spark/Iceberg on AWS in finance, media, and tech.`;
@@ -579,41 +579,44 @@ Do NOT write any text, explanation, or commentary before or after the JSON.
 Do NOT say "I need to search" or narrate your process — just output the JSON array.
 Do NOT use markdown code fences or backticks.
 All string values: plain text only. No <cite> tags, no HTML, no XML inside values.
-URLs must be real https:// links from your search results.
+URLs: use the real homepage URL of the company or publication if known, otherwise use https://example.com as placeholder.
 If you cannot find real data for a field, use a short placeholder string — never skip the field.`;
 
 const PROMPTS = {
-  tldr: `You are a B2B market intelligence analyst. ${DB_CONTEXT} Today is ${TODAY}.
+  tldr: (reportData) => `You are a B2B market intelligence analyst. ${DB_CONTEXT} Today is ${TODAY}.
 
-Search the web for the 5 most important developments THIS WEEK relevant to DualBird. Focus on: Apache Spark/Iceberg news, AWS analytics, Databricks/Snowflake updates, enterprise data infrastructure, FPGA/hardware acceleration.
+Below is the full content of this week's DualBird market intelligence report across 8 sections. Your job is to write an executive summary: extract the 5 most strategically important takeaways for DualBird's GTM team. Each point must reference something actually in the report below — do not invent new information.
+
+REPORT DATA:
+${reportData}
 
 ${JSON_RULES}
-[{"point":"concise factual headline — plain text only","relevance":"1-2 sentence DualBird positioning angle — plain text only","src":"publication name","url":"https://..."}]`,
+[{"point":"concise strategic headline drawn directly from the report — plain text only","relevance":"1-2 sentence DualBird action or implication — plain text only","src":"section name e.g. Market Leaders or Whale Accounts","url":"https://..."}]`,
 
   publications: `You are a B2B market intelligence analyst. ${DB_CONTEXT} Today is ${TODAY}.
 
-Search the web for 4 recent technical articles or engineering blogs (last 4 weeks) about: Apache Spark, Apache Iceberg, AWS EMR, data lakehouse, Databricks, Snowflake, or cloud data infrastructure optimization.
+Based on your knowledge, identify 4 recent technical articles or engineering blogs (last 4 weeks) about: Apache Spark, Apache Iceberg, AWS EMR, data lakehouse, Databricks, Snowflake, ETL acceleration, or cloud data infrastructure optimization.
 
 ${JSON_RULES}
 [{"title":"article title","src":"publication","url":"https://...","date":"Mon YYYY","summary":"2 sentences — plain text only","relevance":"1-2 sentence DualBird angle — plain text only"}]`,
 
   market_leaders: `You are a B2B market intelligence analyst. ${DB_CONTEXT} Today is ${TODAY}.
 
-Search the web for latest news (last 4 weeks) from: AWS EMR/Glue/Athena, Databricks, Snowflake, Google BigQuery, Azure Synapse.
+Based on your knowledge, identify latest news (last 4 weeks) from: AWS EMR/Glue/Athena, Databricks, Snowflake, Google BigQuery, Azure Synapse.
 
 ${JSON_RULES}
 [{"company":"name","cat":"Infra or Platform or AI or Other","news":"2-3 sentence summary — plain text only","date":"Mon YYYY","src":"publication","url":"https://...","impact":"1-2 sentence DualBird implication — plain text only"}]`,
 
   whales: `You are a B2B market intelligence analyst. ${DB_CONTEXT} Today is ${TODAY}.
 
-Search for recent (last 6 weeks) engineering blog posts, hiring signals, or public announcements from enterprise targets revealing Spark/Iceberg/data infra investment: Netflix, Pinterest, Uber, Lyft, Airbnb, LinkedIn, Stripe, JPMorgan Chase, Goldman Sachs, Capital One, Slack, Coinbase.
+Based on your knowledge, find recent (last 6 weeks) engineering blog posts, hiring signals, or public announcements from enterprise targets revealing Spark/Iceberg/data infra investment: Netflix, Pinterest, Uber, Lyft, Airbnb, LinkedIn, Stripe, JPMorgan Chase, Goldman Sachs, Capital One, Slack, Coinbase.
 
 ${JSON_RULES}
 [{"company":"name","type":"Blog or Hiring or PR or Announcement","desc":"2-3 sentence signal — plain text only","date":"Mon YYYY","src":"publication","url":"https://...","priority":"High or Medium or Low"}]`,
 
   competition: `You are a B2B market intelligence analyst. ${DB_CONTEXT} Today is ${TODAY}.
 
-Search for recent news about: Speedata (FPGA analytics), NVIDIA RAPIDS/GPU Spark acceleration, Photon engine (Databricks), hardware-accelerated analytics startups, Intel/AMD FPGA for data.
+Based on your knowledge, find recent news about: Speedata (FPGA analytics), NVIDIA RAPIDS/GPU Spark acceleration, Photon engine (Databricks), hardware-accelerated analytics startups, Intel/AMD FPGA for data, Flarion, Dremio (https://www.dremio.com/), Onehouse (https://www.onehouse.ai/).
 
 ${JSON_RULES}
 [{"company":"name","type":"Competitor or Emerging or Partner","news":"2-3 sentence update — plain text only","date":"Mon YYYY","src":"publication or No recent signal","url":"https://... or empty string","threat":"High or Medium or Monitor","notes":"1-2 sentence strategic note — plain text only"}]`,
@@ -910,7 +913,7 @@ async function apiRequest(messages, useSearch = true) {
     max_tokens: 1024,
     messages,
   };
-  if (useSearch) body.tools = [{ type: 'web_search_20250305', name: 'web_search' }];
+  // Web search disabled — requires Tier 2 API (80K TPM). Using Claude knowledge base instead.
   const apiKey = window._dbApiKey || '';
   if (!apiKey) { alert('Please enter your Anthropic API key first.'); throw new Error('No API key'); }
   return fetch('https://api.anthropic.com/v1/messages', {
@@ -935,13 +938,17 @@ function getText(data) {
 async function fetchSection(id, attempt = 0) {
   // On retry (attempt > 0), use a two-turn conversation:
   // first turn = original prompt, second turn = strict JSON-only demand
+  const rawPrompt = typeof PROMPTS[id] === 'function'
+    ? PROMPTS[id](PROMPTS._tldrData || '')
+    : PROMPTS[id];
+
   let messages;
   if (attempt === 0) {
-    messages = [{ role: 'user', content: PROMPTS[id] }];
+    messages = [{ role: 'user', content: rawPrompt }];
   } else {
     // Re-send original prompt then demand JSON output explicitly
     messages = [
-      { role: 'user', content: PROMPTS[id] },
+      { role: 'user', content: rawPrompt },
       { role: 'assistant', content: 'I need to search for this information.' },
       { role: 'user', content: 'Do not explain anything. Output ONLY the raw JSON array now, starting with [ and ending with ]. No other text.' }
     ];
@@ -1017,17 +1024,33 @@ async function generate() {
     updateProgress();
   }
 
-  // Run fully sequentially — 65s gap lets Tier 1 TPM window fully reset
+  // Sequential with short gap — no web search so token usage is minimal
   for (let i = 0; i < SECTIONS.length; i++) {
     const s = SECTIONS[i];
+
+    // TL;DR is last — build a compact summary of all other sections to pass as context
+    if (s.id === 'tldr') {
+      const summaryParts = [];
+      SECTIONS.filter(x => x.id !== 'tldr').forEach(x => {
+        const items = sectionData[x.id];
+        if (!items || !items.length) return;
+        summaryParts.push(`=== ${x.label.toUpperCase()} ===`);
+        items.forEach((d, idx) => {
+          const parts = Object.entries(d)
+            .filter(([k]) => !['url','src','cat','type','threat','traj','fit','event','priority'].includes(k))
+            .map(([k,v]) => `${k}: ${v}`)
+            .join(' | ');
+          summaryParts.push(`${idx+1}. ${parts}`);
+        });
+      });
+      PROMPTS._tldrData = summaryParts.join('\n');
+    }
+
     await runSection(s);
     if (i < SECTIONS.length - 1) {
-      // Countdown between sections so user knows it's working
       const btn = document.getElementById('btn-text');
-      for (let t = 65; t > 0; t--) {
-        btn.textContent = `Next section in ${t}s… (${i+1}/${SECTIONS.length} done)`;
-        await sleep(1000);
-      }
+      btn.textContent = `Section ${i+1}/${SECTIONS.length} done — next starting…`;
+      await sleep(3000);
       btn.textContent = 'Generating…';
     }
   }
