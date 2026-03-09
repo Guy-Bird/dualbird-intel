@@ -606,9 +606,11 @@ Do NOT use markdown code fences or backticks.
 All string values: plain text only. No <cite> tags, no HTML, no XML inside values.
 
 RECENCY RULES — CRITICAL:
-- Every item you return MUST be from the last 14 days. Today is ${TODAY}.
-- Do NOT include anything older than 14 days — if you cannot find enough recent items, return fewer items rather than using older content.
-- Each item must include the exact publication date. If the date is unclear, skip that item.
+- Prioritize items from the last 14 days. Today is ${TODAY}.
+- If you cannot find enough items from the last 14 days, expand your search to the last 30 days.
+- NEVER return an empty array [] — always return at least 2-3 items even if they are up to 30 days old.
+- Each item must include the exact publication date.
+- Mark items older than 14 days by adding "(30d)" at the end of the date field.
 
 URL RULES — CRITICAL:
 - The "url" field must be the EXACT direct link to the specific article, blog post, press release, or job posting you are citing.
@@ -632,28 +634,28 @@ ${JSON_RULES}
 
   publications: `You are a B2B market intelligence analyst. ${DB_CONTEXT} Today is ${TODAY}.
 
-Based on your knowledge, identify 4 technical articles or engineering blogs published in the LAST 14 DAYS about: Apache Spark, Apache Iceberg, AWS EMR, data lakehouse, Databricks, Snowflake, ETL acceleration, or cloud data infrastructure optimization.
+Search the web for 4 technical articles or engineering blogs published in the LAST 14 DAYS about: Apache Spark, Apache Iceberg, AWS EMR, data lakehouse, Databricks, Snowflake, ETL acceleration, or cloud data infrastructure optimization.
 
 ${JSON_RULES}
 [{"title":"article title","src":"publication","url":"exact article URL or empty string","verified":true,"date":"exact date e.g. Mar 9 2026 — must be within last 14 days","summary":"2 sentences — plain text only","relevance":"1-2 sentence DualBird angle — plain text only"}]`,
 
   market_leaders: `You are a B2B market intelligence analyst. ${DB_CONTEXT} Today is ${TODAY}.
 
-Based on your knowledge, identify news published in the LAST 14 DAYS from: AWS EMR/Glue/Athena, Databricks, Snowflake, Google BigQuery, Azure Synapse.
+Search the web for news published in the LAST 14 DAYS from: AWS EMR/Glue/Athena, Databricks, Snowflake, Google BigQuery, Azure Synapse.
 
 ${JSON_RULES}
 [{"company":"name","cat":"Infra or Platform or AI or Other","news":"2-3 sentence summary — plain text only","date":"exact date e.g. Mar 9 2026 — must be within last 14 days","src":"publication","url":"exact article URL or empty string","verified":true,"impact":"1-2 sentence DualBird implication — plain text only"}]`,
 
   whales: `You are a B2B market intelligence analyst. ${DB_CONTEXT} Today is ${TODAY}.
 
-Based on your knowledge, find engineering blog posts, hiring signals, or public announcements from the LAST 14 DAYS from enterprise targets revealing Spark/Iceberg/data infra investment: Netflix, Pinterest, Uber, Lyft, Airbnb, LinkedIn, Stripe, JPMorgan Chase, Goldman Sachs, Capital One, Slack, Coinbase.
+Search the web for engineering blog posts, hiring signals, or public announcements from the LAST 14 DAYS from enterprise targets revealing Spark/Iceberg/data infra investment: Netflix, Pinterest, Uber, Lyft, Airbnb, LinkedIn, Stripe, JPMorgan Chase, Goldman Sachs, Capital One, Slack, Coinbase.
 
 ${JSON_RULES}
 [{"company":"name","type":"Blog or Hiring or PR or Announcement","desc":"2-3 sentence signal — plain text only","date":"exact date e.g. Mar 9 2026 — must be within last 14 days","src":"publication","url":"exact article URL or empty string","verified":true,"priority":"High or Medium or Low"}]`,
 
   competition: `You are a B2B market intelligence analyst. ${DB_CONTEXT} Today is ${TODAY}.
 
-Based on your knowledge, find news from the LAST 14 DAYS about: Speedata (FPGA analytics), NVIDIA RAPIDS/GPU Spark acceleration, Photon engine (Databricks), hardware-accelerated analytics startups, Intel/AMD FPGA for data, Flarion, Dremio (https://www.dremio.com/), Onehouse (https://www.onehouse.ai/).
+Search the web for news from the LAST 14 DAYS about: Speedata (FPGA analytics), NVIDIA RAPIDS/GPU Spark acceleration, Photon engine (Databricks), hardware-accelerated analytics startups, Intel/AMD FPGA for data, Flarion, Dremio (https://www.dremio.com/), Onehouse (https://www.onehouse.ai/).
 
 ${JSON_RULES}
 [{"company":"name","type":"Competitor or Emerging or Partner","news":"2-3 sentence update — plain text only","date":"exact date e.g. Mar 9 2026 — must be within last 14 days","src":"publication or No recent signal","url":"exact article URL or empty string","verified":true,"threat":"High or Medium or Monitor","notes":"1-2 sentence strategic note — plain text only"}]`,
@@ -674,14 +676,14 @@ ${JSON_RULES}
 
   trends: `You are a B2B market intelligence analyst. ${DB_CONTEXT} Today is ${TODAY}.
 
-Based on news from the LAST 14 DAYS, identify 4 macro trends relevant to DualBird's market: Iceberg adoption, AI/ML pipeline demands, cloud cost optimization pressure, hardware acceleration interest, open lakehouse vs proprietary platforms.
+Search the web for news from the LAST 14 DAYS and identify 4 macro trends relevant to DualBird's market: Iceberg adoption, AI/ML pipeline demands, cloud cost optimization pressure, hardware acceleration interest, open lakehouse vs proprietary platforms.
 
 ${JSON_RULES}
 [{"trend":"short trend name","dev":"2-3 sentence description — plain text only","traj":"Growing or Stable or Declining","src":"publication","url":"exact article URL or empty string","verified":true,"impact":"1-2 sentence DualBird impact — plain text only"}]`,
 
   blind_spots: `You are a strategic advisor. ${DB_CONTEXT} Today is ${TODAY}.
 
-Based on developments in the LAST 14 DAYS, identify 3 blind spots or risks DualBird may be overlooking: alternative table formats (Hudi, Paimon, Delta Lake), GPU vs FPGA acceleration debate, regulatory changes, new open-source projects disrupting FPGA acceleration, emerging cloud providers.
+Search the web for developments in the LAST 14 DAYS and identify 3 blind spots or risks DualBird may be overlooking: alternative table formats (Hudi, Paimon, Delta Lake), GPU vs FPGA acceleration debate, regulatory changes, new open-source projects disrupting FPGA acceleration, emerging cloud providers.
 
 ${JSON_RULES}
 [{"gap":"short gap title","signal":"2-3 sentence risk description — plain text only","action":"1-2 sentence recommended action — plain text only","src":"publication or source","url":"exact article URL or empty string","verified":true}]`,
@@ -955,7 +957,7 @@ async function apiRequest(messages, useSearch = true) {
     max_tokens: 1024,
     messages,
   };
-  // Web search disabled — requires Tier 2 API (80K TPM). Using Claude knowledge base instead.
+  if (useSearch) body.tools = [{ type: 'web_search_20250305', name: 'web_search' }];
   const apiKey = window._dbApiKey || '';
   if (!apiKey) { alert('Please enter your Anthropic API key first.'); throw new Error('No API key'); }
   return fetch('https://api.anthropic.com/v1/messages', {
@@ -1019,6 +1021,7 @@ async function fetchSection(id, attempt = 0) {
 
   const result = extractJSON(allText);
   if (result && result.length > 0) return result;
+  // Empty array [] is treated as a failed response — retry with stricter prompt
 
   if (attempt < 2) {
     console.warn(`[${id}] No JSON found, retrying with stricter follow-up (attempt ${attempt + 1})`);
