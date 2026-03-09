@@ -560,6 +560,7 @@ document.getElementById('today-date').textContent = TODAY;
 document.getElementById('footer-date').textContent = `DualBird Market Intelligence · AI-Powered · ${TODAY}`;
 
 const SECTIONS = [
+  {id:'tldr',            icon:'⚡', label:'TL;DR',            desc:'Executive summary of this report'},
   {id:'publications',    icon:'📰', label:'Publications',     desc:'Technical articles, blogs & case studies'},
   {id:'market_leaders',  icon:'🏢', label:'Market Leaders',   desc:'AWS, Databricks, Snowflake & major players'},
   {id:'whales',          icon:'🐳', label:'Whale Accounts',   desc:'Named enterprise targets showing signals'},
@@ -568,7 +569,19 @@ const SECTIONS = [
   {id:'manda',           icon:'💰', label:'M&A & Funding',    desc:'Ecosystem deals, rounds & consolidation'},
   {id:'trends',          icon:'📈', label:'Trends',           desc:'Macro direction of travel'},
   {id:'blind_spots',     icon:'🔍', label:'Blind Spots',      desc:'What might we be missing?'},
-  {id:'tldr',            icon:'⚡', label:'TL;DR',            desc:'Executive summary of this report'},
+];
+
+// Execution order: all sections except tldr first, tldr last (it summarizes the others)
+const EXEC_ORDER = [
+  {id:'publications'},
+  {id:'market_leaders'},
+  {id:'whales'},
+  {id:'competition'},
+  {id:'customer_signals'},
+  {id:'manda'},
+  {id:'trends'},
+  {id:'blind_spots'},
+  {id:'tldr'},
 ];
 
 const DB_CONTEXT = `DualBird is an FPGA-based infrastructure acceleration company that speeds up Apache Spark and Apache Iceberg workloads on AWS by 10-30x while reducing cloud costs by 50-90%, with zero integration or migration required. Backed by Bessemer, Lightspeed, and ICON. Targets enterprises running large-scale Spark/Iceberg on AWS in finance, media, and tech.`;
@@ -1025,8 +1038,9 @@ async function generate() {
   }
 
   // Sequential with short gap — no web search so token usage is minimal
-  for (let i = 0; i < SECTIONS.length; i++) {
-    const s = SECTIONS[i];
+  // EXEC_ORDER runs tldr last even though it displays first in the UI
+  for (let i = 0; i < EXEC_ORDER.length; i++) {
+    const s = SECTIONS.find(x => x.id === EXEC_ORDER[i].id);
 
     // TL;DR is last — build a compact summary of all other sections to pass as context
     if (s.id === 'tldr') {
@@ -1047,9 +1061,9 @@ async function generate() {
     }
 
     await runSection(s);
-    if (i < SECTIONS.length - 1) {
+    if (i < EXEC_ORDER.length - 1) {
       const btn = document.getElementById('btn-text');
-      btn.textContent = `Section ${i+1}/${SECTIONS.length} done — next starting…`;
+      btn.textContent = `Section ${i+1}/${EXEC_ORDER.length} done — next starting…`;
       await sleep(3000);
       btn.textContent = 'Generating…';
     }
