@@ -335,8 +335,8 @@
 
 <script>
 // ── Tier 1 hardcoded (Opus 4.6, $25+ paid) ──
-const INTER_SECTION_DELAY = 8000;
-const RATE_LIMIT_DELAYS = [30000, 60000, 90000, 120000];
+const INTER_SECTION_DELAY = 15000;
+const RATE_LIMIT_DELAYS = [60000, 90000, 120000, 180000];
 
 const ISSUE = Math.max(1, Math.ceil((new Date() - new Date('2026-03-08')) / (7*86400000)) + 1);
 const TODAY = new Date().toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
@@ -788,14 +788,14 @@ async function fetchSection(id, attempt=0) {
       const wait = RATE_LIMIT_DELAYS[attempt];
       const waitSecs = Math.round(wait/1000);
       document.getElementById('rate-note').classList.add('visible');
-      document.getElementById('rate-note').textContent = `⚠️ Rate limit hit (attempt ${attempt+1}) — waiting ${waitSecs}s before retrying. Consider switching to a higher tier above.`;
+      document.getElementById('rate-note').textContent = `⚠️ Rate limit hit (attempt ${attempt+1}) — waiting ${waitSecs}s before retrying automatically…`;
       document.getElementById('prog-label').textContent=`⏳ Rate limited — resuming in ${waitSecs}s…`;
       await sleep(wait);
       document.getElementById('rate-note').classList.remove('visible');
       document.getElementById('prog-label').textContent='Researching 9 sections via live web search…';
       return fetchSection(id, attempt+1);
     }
-    throw new Error(`Rate limited after ${attempt+1} attempts. Try increasing the section delay using the tier selector, or wait a few minutes and regenerate.`);
+    throw new Error(`Rate limited after ${attempt+1} attempts. Please wait 2–3 minutes and click Regenerate.`);
   }
 
   if (!res.ok) {
