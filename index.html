@@ -334,9 +334,9 @@
 </div>
 
 <script>
-// ── Tier 1 hardcoded (Opus 4.6, $25+ paid) ──
-const INTER_SECTION_DELAY = 15000;
-const RATE_LIMIT_DELAYS = [60000, 90000, 120000, 180000];
+// ── Tier 1 hardcoded (Sonnet 4.6 — best accuracy + real URLs) ──
+const INTER_SECTION_DELAY = 5000;
+const RATE_LIMIT_DELAYS = [30000, 60000, 90000, 120000];
 
 const ISSUE = Math.max(1, Math.ceil((new Date() - new Date('2026-03-08')) / (7*86400000)) + 1);
 const TODAY = new Date().toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
@@ -381,12 +381,10 @@ If insufficient, expand to 30 days and note "(30d)" in the date field.
 NEVER return an empty array — always return at least 2 items.
 
 URL RULES — CRITICAL:
-- "url" must be a real URL you actually found via web search — NOT a constructed or guessed path.
-- If you found the exact article URL in search results, use it.
-- If you only know the publication but not the exact article URL, use the publication's homepage (e.g. https://databricks.com or https://aws.amazon.com/blogs/big-data/) — a homepage is better than a fabricated deep link.
-- NEVER construct a URL like https://reuters.com/tech/some-slug-2026/ unless you actually retrieved that exact URL from search results.
-- Set "verified": true only if you retrieved the URL directly from a search result. Set "verified": false if you are approximating.
-- "src" should be the human-readable publication name (e.g. "Reuters", "AWS Blog", "Databricks Blog").`;
+- "src" = the publication or blog name (e.g. "Reuters", "AWS Blog", "Databricks Engineering Blog"). This is what matters most.
+- "url" = only include a URL if you are 100% certain it is real and directly retrieved from search results. If in any doubt, set "url" to "" and "verified" to false.
+- Do NOT construct or guess URLs. A missing URL is far better than a hallucinated one.
+- The app will always generate a working Google Search link from the "src" field, so a great "src" name is more valuable than a guessed URL.`;
 
 // ── Prompts ──
 const PROMPTS = {
@@ -503,34 +501,27 @@ function badge(v) {
   return `<span class="badge" style="background:${s.bg};color:${s.color};border:1px solid ${s.border}">${esc(v)}</span>`;
 }
 
-// ── srcLink — primary link + always a Google Search fallback ──
+// ── srcLink — Google Search as PRIMARY, AI url as secondary ──
 function srcLink(name, url, verified) {
-  const extIcon = `<svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="flex-shrink:0;opacity:0.6"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>`;
+  const extIcon = `<svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="flex-shrink:0;opacity:0.7"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>`;
   const searchIcon = `<svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`;
+
   const label = name || 'Source';
 
-  // Google search URL for this source — always works as fallback
-  const searchQ = encodeURIComponent((name ? name + ' ' : '') + 'site:reuters.com OR site:techcrunch.com OR site:databricks.com OR site:aws.amazon.com OR site:bloomberg.com');
-  const specificQ = encodeURIComponent(name || label);
-  const googleUrl = `https://www.google.com/search?q=${specificQ}`;
+  // Build a targeted Google search: publication name + key terms
+  const googleQ = encodeURIComponent(label);
+  const googleUrl = `https://www.google.com/search?q=${googleQ}`;
 
   let out = '';
 
-  if (url && url.startsWith('http')) {
-    // verified=false means AI likely guessed the URL → show as orange warning
-    const isGuessed = verified === false;
-    const vbadge = isGuessed
-      ? `<span class="src-unverified" title="AI-generated URL — may not resolve">⚠ AI URL</span>`
-      : `<span class="src-verified" title="Sourced from web search">✓</span>`;
-    const cls = isGuessed ? 'src-link unverified' : 'src-link';
-    const tooltip = isGuessed ? 'AI-generated URL — may not exist. Use Search button to find the real article.' : '';
-    out += `<a class="${cls}" href="${esc(url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" title="${tooltip}">${extIcon}${esc(label)}${vbadge}</a>`;
-  } else {
-    out += `<span class="src-plain">📄 ${esc(label)}</span>`;
-  }
+  // PRIMARY: Google Search button (always works)
+  out += `<a class="src-link" href="${googleUrl}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" title="Search Google for this article">${searchIcon}&nbsp;${esc(label)}</a>`;
 
-  // Always append a Google Search fallback button
-  out += `<a class="src-search" href="${googleUrl}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" title="Search Google for this article">${searchIcon} Search</a>`;
+  // SECONDARY: AI-generated URL — shown only as a small "direct link" hint, clearly marked as unverified
+  if (url && url.startsWith('http')) {
+    const warn = `<span class="src-unverified" title="AI-generated URL — may 404">⚠</span>`;
+    out += `<a class="src-search" href="${esc(url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" title="AI-suggested direct link — may not resolve">${extIcon} direct link ${warn}</a>`;
+  }
 
   return out;
 }
@@ -729,101 +720,172 @@ function extractJSON(text) {
 }
 
 // ── API call ──
-async function apiRequest(messages, useSearch=true) {
+async function apiCall(messages, tools) {
   const apiKey = window._dbApiKey || '';
   if (!apiKey) { alert('Please enter and save your Anthropic API key first.'); throw new Error('No API key'); }
-  const body = {
-    model: 'claude-opus-4-6',
-    max_tokens: 1200,
-    messages,
-  };
-  if (useSearch) body.tools = [{ type:'web_search_20250305', name:'web_search' }];
+  const body = { model: 'claude-sonnet-4-6', max_tokens: 2000, messages };
+  if (tools) body.tools = tools;
   return fetch('https://api.anthropic.com/v1/messages', {
-    method:'POST',
-    headers:{
-      'Content-Type':'application/json',
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
       'x-api-key': apiKey,
-      'anthropic-version':'2023-06-01',
-      'anthropic-dangerous-direct-browser-access':'true',
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
     },
     body: JSON.stringify(body),
   });
 }
 
-function getText(data) {
-  return (data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n');
+// Extract ALL content blocks — text + tool results (which contain real URLs)
+function extractAllContent(data) {
+  let out = '';
+  for (const block of (data.content || [])) {
+    if (block.type === 'text') out += block.text + '\n';
+    if (block.type === 'tool_result') {
+      for (const c of (block.content || [])) {
+        if (c.type === 'text') out += c.text + '\n';
+      }
+    }
+    // web_search_tool_result — contains actual search results with real URLs
+    if (block.type === 'web_search_tool_result') {
+      for (const r of (block.content || [])) {
+        if (r.type === 'web_search_result') {
+          out += `SEARCH_RESULT url="${r.url}" title="${r.title}"\n${r.encrypted_content || ''}\n`;
+        }
+      }
+    }
+  }
+  return out;
 }
 
-// ── FIXED: fetchSection — better retry strategy with explicit JSON-only follow-up ──
-async function fetchSection(id, attempt=0) {
-  const rawPrompt = typeof PROMPTS[id]==='function'
-    ? PROMPTS[id](PROMPTS._tldrData||'')
+function getText(data) {
+  return (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
+}
+
+// ── Two-step fetch: search → extract with real URLs ──
+async function fetchSection(id, attempt = 0) {
+  const rawPrompt = typeof PROMPTS[id] === 'function'
+    ? PROMPTS[id](PROMPTS._tldrData || '')
     : PROMPTS[id];
 
-  let messages;
-  if (attempt === 0) {
-    messages = [{ role:'user', content: rawPrompt }];
-  } else {
-    // Force JSON-only on retries — no search tool, just direct output
-    messages = [
-      { role:'user', content: rawPrompt },
-      { role:'assistant', content: 'I\'ll provide the JSON array now.' },
-      { role:'user', content:
-        'Output ONLY the raw JSON array. Your response must start with [ and end with ].\n' +
-        'No markdown, no code fences, no explanation. Just the JSON array:\n' }
-    ];
-  }
-
-  let res;
+  // ── STEP 1: Web search to get real, grounded URLs ──
+  let searchRes;
   try {
-    // On retries, disable web search to get a clean JSON-only response
-    res = await apiRequest(messages, attempt===0);
+    searchRes = await apiCall(
+      [{ role: 'user', content: rawPrompt }],
+      [{ type: 'web_search_20250305', name: 'web_search' }]
+    );
   } catch(e) {
-    if (attempt < 2) { await sleep(RATE_LIMIT_DELAYS[attempt]); return fetchSection(id, attempt+1); }
+    if (attempt < 2) { await sleep(RATE_LIMIT_DELAYS[attempt]); return fetchSection(id, attempt + 1); }
     throw e;
   }
 
-  if (res.status===429) {
+  if (searchRes.status === 429) {
     if (attempt < RATE_LIMIT_DELAYS.length) {
       const wait = RATE_LIMIT_DELAYS[attempt];
-      const waitSecs = Math.round(wait/1000);
+      const waitSecs = Math.round(wait / 1000);
       document.getElementById('rate-note').classList.add('visible');
       document.getElementById('rate-note').textContent = `⚠️ Rate limit hit (attempt ${attempt+1}) — waiting ${waitSecs}s before retrying automatically…`;
-      document.getElementById('prog-label').textContent=`⏳ Rate limited — resuming in ${waitSecs}s…`;
+      document.getElementById('prog-label').textContent = `⏳ Rate limited — resuming in ${waitSecs}s…`;
       await sleep(wait);
       document.getElementById('rate-note').classList.remove('visible');
-      document.getElementById('prog-label').textContent='Researching 9 sections via live web search…';
-      return fetchSection(id, attempt+1);
+      document.getElementById('prog-label').textContent = 'Researching 9 sections via live web search…';
+      return fetchSection(id, attempt + 1);
     }
     throw new Error(`Rate limited after ${attempt+1} attempts. Please wait 2–3 minutes and click Regenerate.`);
   }
 
-  if (!res.ok) {
-    const b = await res.text();
-    throw new Error(`HTTP ${res.status}: ${b.slice(0,300)}`);
+  if (!searchRes.ok) {
+    const b = await searchRes.text();
+    throw new Error(`HTTP ${searchRes.status}: ${b.slice(0, 300)}`);
   }
 
-  const data = await res.json();
-  const text = getText(data);
+  const searchData = await searchRes.json();
+
+  // Collect real URLs directly from web_search_tool_result blocks
+  const realUrls = [];
+  for (const block of (searchData.content || [])) {
+    if (block.type === 'web_search_tool_result') {
+      for (const r of (block.content || [])) {
+        if (r.type === 'web_search_result' && r.url) {
+          realUrls.push({ url: r.url, title: r.title || '' });
+        }
+      }
+    }
+  }
+
+  // Build the full conversation so far (including tool use + results)
+  const searchMessages = [
+    { role: 'user', content: rawPrompt },
+    { role: 'assistant', content: searchData.content },
+  ];
+
+  // ── STEP 2: Extraction — ask model to format into JSON using ONLY the URLs it just found ──
+  const extractionPrompt = `Based on the web search results above, output the JSON array now.
+
+CRITICAL URL RULE: You MUST use ONLY the exact URLs that appeared in the search results above. 
+Do NOT construct, guess, or modify any URL. If a search result has url="https://example.com/article", use that exact string.
+Every item's "url" field must be an exact URL from the search results, and "verified" must be true.
+If you don't have a real URL for an item, set "url" to "" and "verified" to false.
+
+Output ONLY the raw JSON array starting with [ and ending with ]. No markdown, no explanation.`;
+
+  let extractRes;
+  try {
+    extractRes = await apiCall([
+      ...searchMessages,
+      { role: 'user', content: extractionPrompt }
+    ], null); // no tools on extraction step — pure JSON output
+  } catch(e) {
+    if (attempt < 2) { await sleep(RATE_LIMIT_DELAYS[attempt]); return fetchSection(id, attempt + 1); }
+    throw e;
+  }
+
+  if (extractRes.status === 429) {
+    if (attempt < RATE_LIMIT_DELAYS.length) {
+      const wait = RATE_LIMIT_DELAYS[attempt];
+      await sleep(wait);
+      return fetchSection(id, attempt + 1);
+    }
+    throw new Error(`Rate limited after ${attempt+1} attempts. Please wait 2–3 minutes and click Regenerate.`);
+  }
+
+  if (!extractRes.ok) {
+    const b = await extractRes.text();
+    throw new Error(`HTTP ${extractRes.status}: ${b.slice(0, 300)}`);
+  }
+
+  const extractData = await extractRes.json();
+  const text = getText(extractData);
 
   if (!text.trim()) {
-    if (attempt<2) { await sleep(5000); return fetchSection(id, attempt+1); }
-    throw new Error(`Empty response. stop_reason=${data.stop_reason}`);
+    if (attempt < 2) { await sleep(5000); return fetchSection(id, attempt + 1); }
+    throw new Error(`Empty response. stop_reason=${extractData.stop_reason}`);
   }
 
   const result = extractJSON(text);
-  if (result && result.length>0) return result;
-
-  // FIXED: On JSON parse failure, do one more attempt with explicit JSON-only instruction
-  if (attempt<2) {
-    console.warn(`[${id}] No valid JSON on attempt ${attempt+1}. Raw preview:`, text.slice(0,200));
-    await sleep(4000);
-    return fetchSection(id, attempt+1);
+  if (result && result.length > 0) {
+    // Final pass: replace any remaining AI-guessed URLs with real ones where possible
+    return result.map(item => {
+      if (!item.url || !item.url.startsWith('http')) {
+        // Try to match by title similarity
+        const match = realUrls.find(r =>
+          r.title && item.title && r.title.toLowerCase().includes((item.title||'').toLowerCase().slice(0,20))
+          || r.title && item.src && r.title.toLowerCase().includes((item.src||'').toLowerCase())
+        );
+        if (match) { item.url = match.url; item.verified = true; }
+      }
+      return item;
+    });
   }
 
-  // Last resort: try to build minimal items from raw text
-  console.error(`[${id}] All JSON parse attempts failed. Text:`, text.slice(0,400));
-  throw new Error(`Could not parse JSON response. Preview: ${text.slice(0,120)}`);
+  if (attempt < 2) {
+    await sleep(4000);
+    return fetchSection(id, attempt + 1);
+  }
+
+  throw new Error(`Could not parse JSON response. Preview: ${text.slice(0, 120)}`);
 }
 
 // ── Main generate ──
