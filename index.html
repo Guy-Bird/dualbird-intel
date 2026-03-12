@@ -723,7 +723,7 @@ function extractJSON(text) {
 async function apiCall(messages, tools) {
   const apiKey = window._dbApiKey || '';
   if (!apiKey) { alert('Please enter and save your Anthropic API key first.'); throw new Error('No API key'); }
-  const body = { model: 'claude-sonnet-4-6', max_tokens: 2000, messages };
+  const body = { model: 'claude-sonnet-4-6', max_tokens: 4000, messages };
   if (tools) body.tools = tools;
   return fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -737,42 +737,41 @@ async function apiCall(messages, tools) {
   });
 }
 
-// Extract ALL content blocks — text + tool results (which contain real URLs)
-function extractAllContent(data) {
-  let out = '';
-  for (const block of (data.content || [])) {
-    if (block.type === 'text') out += block.text + '\n';
-    if (block.type === 'tool_result') {
-      for (const c of (block.content || [])) {
-        if (c.type === 'text') out += c.text + '\n';
-      }
-    }
-    // web_search_tool_result — contains actual search results with real URLs
-    if (block.type === 'web_search_tool_result') {
-      for (const r of (block.content || [])) {
-        if (r.type === 'web_search_result') {
-          out += `SEARCH_RESULT url="${r.url}" title="${r.title}"\n${r.encrypted_content || ''}\n`;
-        }
-      }
-    }
-  }
-  return out;
-}
-
 function getText(data) {
   return (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
 }
 
-// ── Two-step fetch: search → extract with real URLs ──
+// Pull every real URL the search tool actually returned
+function extractRealUrls(data) {
+  const urls = [];
+  for (const block of (data.content || [])) {
+    // The web search tool returns results in this block type
+    if (block.type === 'tool_result' || block.type === 'web_search_tool_result') {
+      const content = block.content || [];
+      for (const c of content) {
+        if (c.type === 'web_search_result' && c.url) {
+          urls.push({ url: c.url, title: (c.title || '').toLowerCase() });
+        }
+      }
+    }
+    // Also check nested inside tool_use results
+    if (block.type === 'tool_use' && block.name === 'web_search') {
+      // search query — skip
+    }
+  }
+  return urls;
+}
+
+// ── Fetch section: search → multi-turn → JSON with real URLs ──
 async function fetchSection(id, attempt = 0) {
   const rawPrompt = typeof PROMPTS[id] === 'function'
     ? PROMPTS[id](PROMPTS._tldrData || '')
     : PROMPTS[id];
 
-  // ── STEP 1: Web search to get real, grounded URLs ──
-  let searchRes;
+  // ── STEP 1: Agentic search — let the model search and read results ──
+  let res1;
   try {
-    searchRes = await apiCall(
+    res1 = await apiCall(
       [{ role: 'user', content: rawPrompt }],
       [{ type: 'web_search_20250305', name: 'web_search' }]
     );
@@ -781,111 +780,130 @@ async function fetchSection(id, attempt = 0) {
     throw e;
   }
 
-  if (searchRes.status === 429) {
-    if (attempt < RATE_LIMIT_DELAYS.length) {
-      const wait = RATE_LIMIT_DELAYS[attempt];
-      const waitSecs = Math.round(wait / 1000);
-      document.getElementById('rate-note').classList.add('visible');
-      document.getElementById('rate-note').textContent = `⚠️ Rate limit hit (attempt ${attempt+1}) — waiting ${waitSecs}s before retrying automatically…`;
-      document.getElementById('prog-label').textContent = `⏳ Rate limited — resuming in ${waitSecs}s…`;
-      await sleep(wait);
-      document.getElementById('rate-note').classList.remove('visible');
-      document.getElementById('prog-label').textContent = 'Researching 9 sections via live web search…';
-      return fetchSection(id, attempt + 1);
-    }
-    throw new Error(`Rate limited after ${attempt+1} attempts. Please wait 2–3 minutes and click Regenerate.`);
-  }
+  if (res1.status === 429) { return handle429(id, attempt, res1); }
+  if (!res1.ok) { const b = await res1.text(); throw new Error(`HTTP ${res1.status}: ${b.slice(0,200)}`); }
 
-  if (!searchRes.ok) {
-    const b = await searchRes.text();
-    throw new Error(`HTTP ${searchRes.status}: ${b.slice(0, 300)}`);
-  }
+  const data1 = await res1.json();
 
-  const searchData = await searchRes.json();
+  // Collect every real URL the search tool returned in this response
+  const realUrls = extractRealUrls(data1);
+  console.log(`[${id}] Real URLs from search:`, realUrls);
 
-  // Collect real URLs directly from web_search_tool_result blocks
-  const realUrls = [];
-  for (const block of (searchData.content || [])) {
-    if (block.type === 'web_search_tool_result') {
-      for (const r of (block.content || [])) {
-        if (r.type === 'web_search_result' && r.url) {
-          realUrls.push({ url: r.url, title: r.title || '' });
-        }
-      }
-    }
-  }
-
-  // Build the full conversation so far (including tool use + results)
-  const searchMessages = [
+  // Build full conversation history including the assistant's search turn
+  const history = [
     { role: 'user', content: rawPrompt },
-    { role: 'assistant', content: searchData.content },
+    { role: 'assistant', content: data1.content },
   ];
 
-  // ── STEP 2: Extraction — ask model to format into JSON using ONLY the URLs it just found ──
-  const extractionPrompt = `Based on the web search results above, output the JSON array now.
+  // If the model used the search tool (stop_reason = 'tool_use'), we need to
+  // provide the tool result and let it continue to generate the text response
+  const usedTool = data1.stop_reason === 'tool_use';
+  let finalText = '';
+  let allRealUrls = [...realUrls];
 
-CRITICAL URL RULE: You MUST use ONLY the exact URLs that appeared in the search results above. 
-Do NOT construct, guess, or modify any URL. If a search result has url="https://example.com/article", use that exact string.
-Every item's "url" field must be an exact URL from the search results, and "verified" must be true.
-If you don't have a real URL for an item, set "url" to "" and "verified" to false.
+  if (usedTool) {
+    // Find the tool_use block to get its id
+    const toolUseBlock = data1.content.find(b => b.type === 'tool_use');
+    if (toolUseBlock) {
+      // Continue the conversation — model already has results via the tool,
+      // now ask it to output JSON with only the URLs it found
+      const continueRes = await apiCall([
+        ...history,
+        {
+          role: 'user',
+          content: [{
+            type: 'tool_result',
+            tool_use_id: toolUseBlock.id,
+            content: 'Search complete. Now output the JSON array. Use ONLY the exact URLs from your search results above — copy them verbatim. Do not construct or modify any URL. Start your response with [ and end with ].'
+          }]
+        }
+      ], [{ type: 'web_search_20250305', name: 'web_search' }]);
 
-Output ONLY the raw JSON array starting with [ and ending with ]. No markdown, no explanation.`;
-
-  let extractRes;
-  try {
-    extractRes = await apiCall([
-      ...searchMessages,
-      { role: 'user', content: extractionPrompt }
-    ], null); // no tools on extraction step — pure JSON output
-  } catch(e) {
-    if (attempt < 2) { await sleep(RATE_LIMIT_DELAYS[attempt]); return fetchSection(id, attempt + 1); }
-    throw e;
-  }
-
-  if (extractRes.status === 429) {
-    if (attempt < RATE_LIMIT_DELAYS.length) {
-      const wait = RATE_LIMIT_DELAYS[attempt];
-      await sleep(wait);
-      return fetchSection(id, attempt + 1);
+      if (continueRes.ok) {
+        const continueData = await continueRes.json();
+        finalText = getText(continueData);
+        allRealUrls = [...allRealUrls, ...extractRealUrls(continueData)];
+      }
     }
-    throw new Error(`Rate limited after ${attempt+1} attempts. Please wait 2–3 minutes and click Regenerate.`);
+  } else {
+    finalText = getText(data1);
   }
 
-  if (!extractRes.ok) {
-    const b = await extractRes.text();
-    throw new Error(`HTTP ${extractRes.status}: ${b.slice(0, 300)}`);
+  // ── STEP 2: If we still don't have clean JSON, do explicit extraction pass ──
+  if (!finalText.trim() || !extractJSON(finalText)) {
+    const extractRes = await apiCall([
+      ...history,
+      {
+        role: 'user',
+        content:
+          `Now output ONLY the JSON array for the ${id} section.\n` +
+          `Real URLs you found (use these EXACTLY, copy-paste verbatim):\n` +
+          allRealUrls.map((r,i) => `${i+1}. ${r.url} — "${r.title}"`).join('\n') +
+          `\n\nStart with [ end with ]. No markdown fences. No explanation.`
+      }
+    ], null);
+
+    if (extractRes.ok) {
+      const extractData = await extractRes.json();
+      finalText = getText(extractData);
+    }
   }
 
-  const extractData = await extractRes.json();
-  const text = getText(extractData);
-
-  if (!text.trim()) {
+  if (!finalText.trim()) {
     if (attempt < 2) { await sleep(5000); return fetchSection(id, attempt + 1); }
-    throw new Error(`Empty response. stop_reason=${extractData.stop_reason}`);
+    throw new Error(`Empty response after all steps.`);
   }
 
-  const result = extractJSON(text);
+  let result = extractJSON(finalText);
+
   if (result && result.length > 0) {
-    // Final pass: replace any remaining AI-guessed URLs with real ones where possible
-    return result.map(item => {
-      if (!item.url || !item.url.startsWith('http')) {
-        // Try to match by title similarity
-        const match = realUrls.find(r =>
-          r.title && item.title && r.title.toLowerCase().includes((item.title||'').toLowerCase().slice(0,20))
-          || r.title && item.src && r.title.toLowerCase().includes((item.src||'').toLowerCase())
-        );
-        if (match) { item.url = match.url; item.verified = true; }
+    // Post-process: for any item with a missing/bad URL, find the best match
+    // from the real URLs the search tool actually returned
+    result = result.map(item => {
+      const hasRealUrl = item.url && item.url.startsWith('http');
+      if (!hasRealUrl && allRealUrls.length > 0) {
+        // Try to match by title or src name
+        const needle = (item.title || item.company || item.trend || item.gap || item.src || '').toLowerCase().slice(0, 30);
+        const match = allRealUrls.find(r => needle && r.title.includes(needle))
+          || allRealUrls.find(r => item.src && r.title.includes((item.src||'').toLowerCase().slice(0, 10)));
+        if (match) {
+          item.url = match.url;
+          item.verified = true;
+        }
+      }
+      // Validate that the URL at minimum looks real (has a domain with a path)
+      if (item.url && item.url.startsWith('http')) {
+        try {
+          const u = new URL(item.url);
+          // If it's just a homepage (path = / or empty), check if we have a better real URL
+          if ((u.pathname === '/' || u.pathname === '') && allRealUrls.length > 0) {
+            const better = allRealUrls.find(r => r.url.includes(u.hostname) && r.url.length > item.url.length);
+            if (better) { item.url = better.url; item.verified = true; }
+          }
+        } catch(e) { item.url = ''; item.verified = false; }
       }
       return item;
     });
+    return result;
   }
 
-  if (attempt < 2) {
-    await sleep(4000);
+  if (attempt < 2) { await sleep(4000); return fetchSection(id, attempt + 1); }
+  throw new Error(`Could not parse JSON. Preview: ${finalText.slice(0, 120)}`);
+}
+
+async function handle429(id, attempt, res) {
+  if (attempt < RATE_LIMIT_DELAYS.length) {
+    const wait = RATE_LIMIT_DELAYS[attempt];
+    const secs = Math.round(wait / 1000);
+    document.getElementById('rate-note').classList.add('visible');
+    document.getElementById('rate-note').textContent = `⚠️ Rate limit — waiting ${secs}s then retrying automatically…`;
+    document.getElementById('prog-label').textContent = `⏳ Rate limited — resuming in ${secs}s…`;
+    await sleep(wait);
+    document.getElementById('rate-note').classList.remove('visible');
+    document.getElementById('prog-label').textContent = 'Researching 9 sections via live web search…';
     return fetchSection(id, attempt + 1);
   }
-
-  throw new Error(`Could not parse JSON response. Preview: ${text.slice(0, 120)}`);
+  throw new Error(`Rate limited after ${attempt+1} attempts. Please wait 2–3 minutes and click Regenerate.`);
 }
 
 // ── Main generate ──
