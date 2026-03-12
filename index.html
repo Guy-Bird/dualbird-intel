@@ -140,23 +140,38 @@
   .item-num { font-size:11px;color:var(--orange);font-weight:700;min-width:22px;flex-shrink:0;padding-top:2px;font-variant-numeric:tabular-nums; }
   .item-amount { font-size:13px;color:var(--green);font-weight:700;letter-spacing:-0.2px; }
 
-  /* ── Source links — always clickable ── */
-  .src-wrap { margin-top:10px;position:relative;z-index:10; }
+  /* ── Source links ── */
+  .src-wrap { margin-top:10px;position:relative;z-index:10;display:flex;align-items:center;gap:6px;flex-wrap:wrap; }
   a.src-link {
     display:inline-flex;align-items:center;gap:5px;
     font-size:11px;color:var(--cyan);font-weight:500;
     background:rgba(0,209,255,0.06);border:1px solid rgba(0,209,255,0.15);
     padding:4px 10px 4px 8px;border-radius:6px;
     text-decoration:none;
-    max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
     transition:background 0.15s,border-color 0.15s;
     cursor:pointer;position:relative;z-index:10;
     pointer-events:all !important;
   }
   a.src-link:hover { background:rgba(0,209,255,0.14);border-color:rgba(0,209,255,0.35); }
+  a.src-link.unverified {
+    color:var(--orange);
+    background:rgba(251,191,36,0.05);
+    border-color:rgba(251,191,36,0.2);
+  }
+  a.src-link.unverified:hover { background:rgba(251,191,36,0.1);border-color:rgba(251,191,36,0.35); }
+  a.src-search {
+    display:inline-flex;align-items:center;gap:4px;
+    font-size:10px;color:var(--text3);font-weight:500;
+    background:rgba(255,255,255,0.03);border:1px solid var(--border);
+    padding:3px 8px;border-radius:6px;text-decoration:none;
+    white-space:nowrap;transition:border-color 0.15s,color 0.15s;
+    pointer-events:all !important;
+  }
+  a.src-search:hover { border-color:var(--border2);color:var(--text2); }
   span.src-plain { font-size:11px;color:var(--text2);font-weight:400; }
   .src-verified { display:inline-flex;align-items:center;margin-left:4px;font-size:9px;font-weight:700;color:var(--green);opacity:0.85; }
-  .src-unverified { display:inline-flex;align-items:center;margin-left:4px;font-size:9px;font-weight:600;color:var(--orange);opacity:0.9; }
+  .src-unverified { display:inline-flex;align-items:center;margin-left:4px;font-size:9px;font-weight:600;color:var(--orange);opacity:0.85; }
 
   .badge { display:inline-block;font-size:10px;font-weight:600;padding:2px 8px;border-radius:20px;letter-spacing:0.2px;white-space:nowrap; }
 
@@ -365,12 +380,13 @@ RECENCY: Prioritize items from the last 14 days (today is ${TODAY}).
 If insufficient, expand to 30 days and note "(30d)" in the date field.
 NEVER return an empty array — always return at least 2 items.
 
-URL RULES:
-- "url" must be the direct link to the specific article or page (not a homepage).
-- Every item MUST include a "url" field and a "src" field.
-- If you cannot find the exact URL, use the most specific URL you can find and set "verified": false.
-- NEVER leave "url" as an empty string — use the closest available URL.
-- A slightly approximate URL is better than an empty one.`;
+URL RULES — CRITICAL:
+- "url" must be a real URL you actually found via web search — NOT a constructed or guessed path.
+- If you found the exact article URL in search results, use it.
+- If you only know the publication but not the exact article URL, use the publication's homepage (e.g. https://databricks.com or https://aws.amazon.com/blogs/big-data/) — a homepage is better than a fabricated deep link.
+- NEVER construct a URL like https://reuters.com/tech/some-slug-2026/ unless you actually retrieved that exact URL from search results.
+- Set "verified": true only if you retrieved the URL directly from a search result. Set "verified": false if you are approximating.
+- "src" should be the human-readable publication name (e.g. "Reuters", "AWS Blog", "Databricks Blog").`;
 
 // ── Prompts ──
 const PROMPTS = {
@@ -487,18 +503,36 @@ function badge(v) {
   return `<span class="badge" style="background:${s.bg};color:${s.color};border:1px solid ${s.border}">${esc(v)}</span>`;
 }
 
-// ── FIXED: srcLink — always renders a clickable link ──
+// ── srcLink — primary link + always a Google Search fallback ──
 function srcLink(name, url, verified) {
   const extIcon = `<svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="flex-shrink:0;opacity:0.6"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>`;
-  const label = name || url || 'Source';
+  const searchIcon = `<svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`;
+  const label = name || 'Source';
+
+  // Google search URL for this source — always works as fallback
+  const searchQ = encodeURIComponent((name ? name + ' ' : '') + 'site:reuters.com OR site:techcrunch.com OR site:databricks.com OR site:aws.amazon.com OR site:bloomberg.com');
+  const specificQ = encodeURIComponent(name || label);
+  const googleUrl = `https://www.google.com/search?q=${specificQ}`;
+
+  let out = '';
+
   if (url && url.startsWith('http')) {
-    const vbadge = verified === false
-      ? `<span class="src-unverified" title="URL approximate">⚠ approx</span>`
-      : `<span class="src-verified" title="Direct source link">✓</span>`;
-    return `<a class="src-link" href="${esc(url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">${extIcon}${esc(label)}${vbadge}</a>`;
+    // verified=false means AI likely guessed the URL → show as orange warning
+    const isGuessed = verified === false;
+    const vbadge = isGuessed
+      ? `<span class="src-unverified" title="AI-generated URL — may not resolve">⚠ AI URL</span>`
+      : `<span class="src-verified" title="Sourced from web search">✓</span>`;
+    const cls = isGuessed ? 'src-link unverified' : 'src-link';
+    const tooltip = isGuessed ? 'AI-generated URL — may not exist. Use Search button to find the real article.' : '';
+    out += `<a class="${cls}" href="${esc(url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" title="${tooltip}">${extIcon}${esc(label)}${vbadge}</a>`;
+  } else {
+    out += `<span class="src-plain">📄 ${esc(label)}</span>`;
   }
-  // No valid URL — show as plain text with icon but still style it
-  return `<span class="src-plain">📄 ${esc(label)}</span>`;
+
+  // Always append a Google Search fallback button
+  out += `<a class="src-search" href="${googleUrl}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" title="Search Google for this article">${searchIcon} Search</a>`;
+
+  return out;
 }
 
 function esc(s) {
@@ -635,6 +669,7 @@ function buildPills() {
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 // ── FIXED: Much more aggressive JSON extraction ──
+
 function extractJSON(text) {
   // 1. Aggressively strip all markdown fences and common wrappers
   let raw = text
@@ -698,8 +733,8 @@ async function apiRequest(messages, useSearch=true) {
   const apiKey = window._dbApiKey || '';
   if (!apiKey) { alert('Please enter and save your Anthropic API key first.'); throw new Error('No API key'); }
   const body = {
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 1500,
+    model: 'claude-opus-4-6',
+    max_tokens: 2000,
     messages,
   };
   if (useSearch) body.tools = [{ type:'web_search_20250305', name:'web_search' }];
