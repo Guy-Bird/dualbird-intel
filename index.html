@@ -278,7 +278,7 @@
     <button id="gen-btn">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
       <span id="btn-text">Generate Intelligence Report</span>
-      <span class="btn-sub" id="btn-sub">· ~4 min · live web search</span>
+      <span class="btn-sub" id="btn-sub">· ~3 min · Opus 4.6 · live web search</span>
     </button>
     <div class="rate-note" id="rate-note">⚠️ Rate limit hit — waiting before retrying automatically.</div>
     <div id="last-gen"><div class="dot-green"></div><span class="last-gen-text" id="last-gen-text"></span></div>
@@ -334,9 +334,9 @@
 </div>
 
 <script>
-// ── Constants ──
-const INTER_SECTION_DELAY = 12000;
-const RATE_LIMIT_DELAYS   = [45000, 75000, 120000];
+// ── Tier 1 hardcoded (Opus 4.6, $25+ paid) ──
+const INTER_SECTION_DELAY = 8000;
+const RATE_LIMIT_DELAYS = [30000, 60000, 90000, 120000];
 
 const ISSUE = Math.max(1, Math.ceil((new Date() - new Date('2026-03-08')) / (7*86400000)) + 1);
 const TODAY = new Date().toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
@@ -734,7 +734,7 @@ async function apiRequest(messages, useSearch=true) {
   if (!apiKey) { alert('Please enter and save your Anthropic API key first.'); throw new Error('No API key'); }
   const body = {
     model: 'claude-opus-4-6',
-    max_tokens: 2000,
+    max_tokens: 1200,
     messages,
   };
   if (useSearch) body.tools = [{ type:'web_search_20250305', name:'web_search' }];
@@ -786,14 +786,16 @@ async function fetchSection(id, attempt=0) {
   if (res.status===429) {
     if (attempt < RATE_LIMIT_DELAYS.length) {
       const wait = RATE_LIMIT_DELAYS[attempt];
+      const waitSecs = Math.round(wait/1000);
       document.getElementById('rate-note').classList.add('visible');
-      document.getElementById('prog-label').textContent=`⏳ Rate limited — waiting ${wait/1000}s…`;
+      document.getElementById('rate-note').textContent = `⚠️ Rate limit hit (attempt ${attempt+1}) — waiting ${waitSecs}s before retrying. Consider switching to a higher tier above.`;
+      document.getElementById('prog-label').textContent=`⏳ Rate limited — resuming in ${waitSecs}s…`;
       await sleep(wait);
       document.getElementById('rate-note').classList.remove('visible');
       document.getElementById('prog-label').textContent='Researching 9 sections via live web search…';
       return fetchSection(id, attempt+1);
     }
-    throw new Error(`Rate limited after ${attempt+1} attempts.`);
+    throw new Error(`Rate limited after ${attempt+1} attempts. Try increasing the section delay using the tier selector, or wait a few minutes and regenerate.`);
   }
 
   if (!res.ok) {
